@@ -11,6 +11,7 @@
 #include <pthread.h>
 #include <emmintrin.h>
 #include <time.h>
+#include <algorithm>
 
 
 int iters;
@@ -21,6 +22,7 @@ double upper;
 int width;
 int height;
 int ncpus;
+
 
 /* allocate memory for image */
 int* image;
@@ -67,87 +69,155 @@ void* compute(void* t){
 
     for (int j = *tid; j < height; j += ncpus) {
         double y0 = j * ((upper - lower) / height) + lower;
-        for (int i = 0; i < width; i += 2) {
-            if(i == width - 1){
-                double x0 = i * ((right - left) / width) + left;
+        int i0 = 0;
+        int i1 = 1;
 
-                int repeats = 0;
-                double x = 0;
-                double y = 0;
-                double length_squared = 0;
-                double x_square = 0;
-                double y_square = 0;
-                while (repeats < iters && length_squared < 4) {
-                    y = 2 * x * y + y0;
-                    x = x_square - y_square + x0;
-                    x_square = x * x;
-                    y_square = y * y;
-                    length_squared = x_square + y_square;
-                    ++repeats;
-                }
-                image[j * width + i] = repeats;
-            }
-            else{
-                __m128d x0;
-                x0[0] = i * ((right - left) / width) + left;
-                x0[1] = (i+1) * ((right - left) / width) + left;
-                
-                int repeat0 = 0;
-                int repeat1 = 0;
-                int flag0 = 0;
-                int flag1 = 0;
-                // int repeats1 = 0;
-                
-                __m128d x;
-                __m128d y;
-                __m128d length_squared;
-                __m128d x_square;
-                __m128d y_square;
-                __m128d two;
-                __m128d Y0;
-                
-                x = _mm_set_pd(0.0, 0.0);
-                y = _mm_set_pd(0.0, 0.0);
-                length_squared = _mm_set_pd(0.0, 0.0);
-                x_square = _mm_set_pd(0.0, 0.0);
-                y_square = _mm_set_pd(0.0, 0.0);
-                two = _mm_set_pd(2.0, 2.0);
-                Y0 = _mm_set_pd(y0, y0);
+        __m128d x0;
+        x0[0] = i0 * ((right - left) / width) + left;
+        x0[1] = i1 * ((right - left) / width) + left;
+        
+        int repeat0 = 0;
+        int repeat1 = 0;
+        int flag0 = 0;
+        int flag1 = 0;
+        
+        __m128d x;
+        __m128d y;
+        __m128d length_squared;
+        __m128d x_square;
+        __m128d y_square;
+        __m128d two;
+        __m128d Y0;
+        
+        x = _mm_set_pd(0.0, 0.0);
+        y = _mm_set_pd(0.0, 0.0);
+        length_squared = _mm_set_pd(0.0, 0.0);
+        x_square = _mm_set_pd(0.0, 0.0);
+        y_square = _mm_set_pd(0.0, 0.0);
+        two = _mm_set_pd(2.0, 2.0);
+        Y0 = _mm_set_pd(y0, y0);
 
-                while((repeat0 < iters && !flag0) || (repeat1 < iters && !flag1)){
-                    if(length_squared[0] >= 4 && !flag0){
-                        image[j * width + i] = repeat0;
-                        flag0 = 1;
-                    }
-                    if(length_squared[1] >= 4 && !flag1){
-                        image[j * width + (i + 1)] = repeat1;
-                        flag1 = 1;
-                    }
-                    y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
-                    x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
-                    x_square = _mm_mul_pd(x, x);
-                    y_square = _mm_mul_pd(y, y);
-                    length_squared = _mm_add_pd(x_square, y_square);
-                    repeat0++;
-                    repeat1++;
-                    // y = 2 * x * y + y0;
-                    // x = x_square - y_square + x0;
-                    // x_square = x * x;
-                    // y_square = y * y;
-                    // length_squared = x_square + y_square;
-                    // ++repeats;
-                }
-                // image[j * width + i] = repeats;
+        while(!flag0 || !flag1){
+            if((repeat0 >= iters || length_squared[0] >= 4) && !flag0){
+                image[j * width + i0] = repeat0;
+                repeat0 = 0;
+                x[0] = 0;
+                y[0] = 0;
+                length_squared[0] = 0;
+                x_square[0] = 0;
+                y_square[0] = 0;
+
+                i0 = std::max(i0, i1) + 1;
+                
+                if(i0 >= width){
+                    flag0 = 1;
+                } 
+                else{
+                    x0[0] = i0 * ((right - left) / width) + left;
+                }  
+                
             }
+            if((repeat1 >= iters || length_squared[1] >= 4) && !flag1){
+                image[j * width + i1] = repeat1;
+                repeat1 = 0;
+                x[1] = 0;
+                y[1] = 0;
+                length_squared[1] = 0;
+                x_square[1] = 0;
+                y_square[1] = 0;
+
+                i1 = std::max(i0, i1) + 1;
+                
+                if(i1 >= width){
+                    flag1 = 1;
+                } 
+                else{
+                    x0[1] = i1 * ((right - left) / width) + left;
+                }
+            }
+            y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
+            x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
+            x_square = _mm_mul_pd(x, x);
+            y_square = _mm_mul_pd(y, y);
+            length_squared = _mm_add_pd(x_square, y_square);
+            repeat0++;
+            repeat1++;
         }
+
+        // for (int i = 0; i < width; i += 2) {
+        //     if(i == width - 1){
+        //         double x0 = i * ((right - left) / width) + left;
+
+        //         int repeats = 0;
+        //         double x = 0;
+        //         double y = 0;
+        //         double length_squared = 0;
+        //         double x_square = 0;
+        //         double y_square = 0;
+        //         while (repeats < iters && length_squared < 4) {
+        //             y = 2 * x * y + y0;
+        //             x = x_square - y_square + x0;
+        //             x_square = x * x;
+        //             y_square = y * y;
+        //             length_squared = x_square + y_square;
+        //             ++repeats;
+        //         }
+        //         image[j * width + i] = repeats;
+        //     }
+        //     else{
+        //         __m128d x0;
+        //         x0[0] = i * ((right - left) / width) + left;
+        //         x0[1] = (i+1) * ((right - left) / width) + left;
+                
+        //         int repeat0 = 0;
+        //         int repeat1 = 0;
+        //         int flag0 = 0;
+        //         int flag1 = 0;
+        //         // int repeats1 = 0;
+                
+        //         __m128d x;
+        //         __m128d y;
+        //         __m128d length_squared;
+        //         __m128d x_square;
+        //         __m128d y_square;
+        //         __m128d two;
+        //         __m128d Y0;
+                
+        //         x = _mm_set_pd(0.0, 0.0);
+        //         y = _mm_set_pd(0.0, 0.0);
+        //         length_squared = _mm_set_pd(0.0, 0.0);
+        //         x_square = _mm_set_pd(0.0, 0.0);
+        //         y_square = _mm_set_pd(0.0, 0.0);
+        //         two = _mm_set_pd(2.0, 2.0);
+        //         Y0 = _mm_set_pd(y0, y0);
+
+        //         while((repeat0 < iters && !flag0) || (repeat1 < iters && !flag1)){
+        //             if(length_squared[0] >= 4 && !flag0){
+        //                 image[j * width + i] = repeat0;
+        //                 flag0 = 1;
+        //             }
+        //             if(length_squared[1] >= 4 && !flag1){
+        //                 image[j * width + (i + 1)] = repeat1;
+        //                 flag1 = 1;
+        //             }
+        //             y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
+        //             x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
+        //             x_square = _mm_mul_pd(x, x);
+        //             y_square = _mm_mul_pd(y, y);
+        //             length_squared = _mm_add_pd(x_square, y_square);
+        //             repeat0++;
+        //             repeat1++;
+        //         }
+        //     }
+        // }
     }
     pthread_exit(NULL);
 }
 
 int main(int argc, char** argv) {
-    time_t time_start;
-    time_t time_end;
-    time(&time_start);
+    // time_t time_start;
+    // time_t time_end;
+    // time(&time_start);
     /* detect how many CPUs are available */
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
@@ -181,31 +251,11 @@ int main(int argc, char** argv) {
     for(int i=0; i<ncpus; i++){
 		pthread_join(threads[i], NULL);
 	}
-    /* mandelbrot set */
-    // for (int j = 0; j < height; ++j) {
-    //     double y0 = j * ((upper - lower) / height) + lower;
-    //     for (int i = 0; i < width; ++i) {
-    //         double x0 = i * ((right - left) / width) + left;
-
-    //         int repeats = 0;
-    //         double x = 0;
-    //         double y = 0;
-    //         double length_squared = 0;
-    //         while (repeats < iters && length_squared < 4) {
-    //             double temp = x * x - y * y + x0;
-    //             y = 2 * x * y + y0;
-    //             x = temp;
-    //             length_squared = x * x + y * y;
-    //             ++repeats;
-    //         }
-    //         image[j * width + i] = repeats;
-    //     }
-    // }
 
     /* draw and cleanup */
     write_png(filename, iters, width, height, image);
     free(image);
-    time(&time_end);
+    // time(&time_end);
     // printf("elapsed time: %f\n", difftime(time_end, time_start));
     pthread_exit(NULL);
 }
