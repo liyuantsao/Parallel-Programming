@@ -136,4 +136,4 @@ hw2-diff ./testcases/slow02.png out.png
 # hw2-diff ./testcases/strict35.png out.png
 # srun -n1 -c12 ./hw2a out.png 10000 -0.28727240825213607 -0.2791226112721823 -0.6345413372717312 -0.6385148107626897 7680 4320
 # hw2-diff ./testcases/strict36.png out.png
-rm out.png
+# rm out.png

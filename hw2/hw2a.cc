@@ -65,26 +65,80 @@ void write_png(const char* filename, int iters, int width, int height, const int
 void* compute(void* t){
     int* tid = (int*)t;
 
-    for (int j = *tid; j < height; j+=ncpus) {
+    for (int j = *tid; j < height; j += ncpus) {
         double y0 = j * ((upper - lower) / height) + lower;
-        for (int i = 0; i < width; i+=1) {
-            double x0 = i * ((right - left) / width) + left;
+        for (int i = 0; i < width; i += 2) {
+            if(i == width - 1){
+                double x0 = i * ((right - left) / width) + left;
 
-            int repeats = 0;
-            double x = 0;
-            double y = 0;
-            double length_squared = 0;
-            double x_square = 0;
-            double y_square = 0;
-            while (repeats < iters && length_squared < 4) {
-                y = 2 * x * y + y0;
-                x = x_square - y_square + x0;
-                x_square = x * x;
-                y_square = y * y;
-                length_squared = x_square + y_square;
-                ++repeats;
+                int repeats = 0;
+                double x = 0;
+                double y = 0;
+                double length_squared = 0;
+                double x_square = 0;
+                double y_square = 0;
+                while (repeats < iters && length_squared < 4) {
+                    y = 2 * x * y + y0;
+                    x = x_square - y_square + x0;
+                    x_square = x * x;
+                    y_square = y * y;
+                    length_squared = x_square + y_square;
+                    ++repeats;
+                }
+                image[j * width + i] = repeats;
             }
-            image[j * width + i] = repeats;
+            else{
+                __m128d x0;
+                x0[0] = i * ((right - left) / width) + left;
+                x0[1] = (i+1) * ((right - left) / width) + left;
+                
+                int repeat0 = 0;
+                int repeat1 = 0;
+                int flag0 = 0;
+                int flag1 = 0;
+                // int repeats1 = 0;
+                
+                __m128d x;
+                __m128d y;
+                __m128d length_squared;
+                __m128d x_square;
+                __m128d y_square;
+                __m128d two;
+                __m128d Y0;
+                
+                x = _mm_set_pd(0.0, 0.0);
+                y = _mm_set_pd(0.0, 0.0);
+                length_squared = _mm_set_pd(0.0, 0.0);
+                x_square = _mm_set_pd(0.0, 0.0);
+                y_square = _mm_set_pd(0.0, 0.0);
+                two = _mm_set_pd(2.0, 2.0);
+                Y0 = _mm_set_pd(y0, y0);
+
+                while((repeat0 < iters && !flag0) || (repeat1 < iters && !flag1)){
+                    if(length_squared[0] >= 4 && !flag0){
+                        image[j * width + i] = repeat0;
+                        flag0 = 1;
+                    }
+                    if(length_squared[1] >= 4 && !flag1){
+                        image[j * width + (i + 1)] = repeat1;
+                        flag1 = 1;
+                    }
+                    y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
+                    x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
+                    x_square = _mm_mul_pd(x, x);
+                    y_square = _mm_mul_pd(y, y);
+                    length_squared = _mm_add_pd(x_square, y_square);
+                    repeat0++;
+                    repeat1++;
+                    // y = 2 * x * y + y0;
+                    // x = x_square - y_square + x0;
+                    // x_square = x * x;
+                    // y_square = y * y;
+                    // length_squared = x_square + y_square;
+                    // ++repeats;
+                }
+                // image[j * width + i] = repeats;
+            }
         }
     }
     pthread_exit(NULL);
@@ -152,6 +206,6 @@ int main(int argc, char** argv) {
     write_png(filename, iters, width, height, image);
     free(image);
     time(&time_end);
-    printf("elapsed time: %f\n", difftime(time_end, time_start));
+    // printf("elapsed time: %f\n", difftime(time_end, time_start));
     pthread_exit(NULL);
 }
