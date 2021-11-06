@@ -79,8 +79,6 @@ void* compute(void* t){
         
         int repeat0 = 0;
         int repeat1 = 0;
-        int flag0 = 0;
-        int flag1 = 0;
         
         __m128d x;
         __m128d y;
@@ -97,53 +95,6 @@ void* compute(void* t){
         y_square = _mm_set_pd(0.0, 0.0);
         two = _mm_set_pd(2.0, 2.0);
         Y0 = _mm_set_pd(y0, y0);
-
-        // while(!flag0 || !flag1){
-        //     if((repeat0 >= iters || length_squared[0] >= 4) && !flag0){
-        //         image[j * width + i0] = repeat0;
-        //         repeat0 = 0;
-        //         x[0] = 0;
-        //         y[0] = 0;
-        //         length_squared[0] = 0;
-        //         x_square[0] = 0;
-        //         y_square[0] = 0;
-
-        //         i0 = std::max(i0, i1) + 1;
-                
-        //         if(i0 >= width){
-        //             flag0 = 1;
-        //         } 
-        //         else{
-        //             x0[0] = i0 * ((right - left) / width) + left;
-        //         }  
-                
-        //     }
-        //     if((repeat1 >= iters || length_squared[1] >= 4) && !flag1){
-        //         image[j * width + i1] = repeat1;
-        //         repeat1 = 0;
-        //         x[1] = 0;
-        //         y[1] = 0;
-        //         length_squared[1] = 0;
-        //         x_square[1] = 0;
-        //         y_square[1] = 0;
-
-        //         i1 = std::max(i0, i1) + 1;
-                
-        //         if(i1 >= width){
-        //             flag1 = 1;
-        //         } 
-        //         else{
-        //             x0[1] = i1 * ((right - left) / width) + left;
-        //         }
-        //     }
-        //     y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
-        //     x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
-        //     x_square = _mm_mul_pd(x, x);
-        //     y_square = _mm_mul_pd(y, y);
-        //     length_squared = _mm_add_pd(x_square, y_square);
-        //     repeat0++;
-        //     repeat1++;
-        // }
 
         int flag_0 = 0;
         int flag_1 = 0;
