@@ -8,6 +8,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <omp.h>
+#include <mpi.h>
+#include <algorithm>
+#include <emmintrin.h>
+
+#define CHUNK 1
 
 void write_png(const char* filename, int iters, int width, int height, const int* buffer) {
     FILE* fp = fopen(filename, "wb");
@@ -47,10 +53,19 @@ void write_png(const char* filename, int iters, int width, int height, const int
 }
 
 int main(int argc, char** argv) {
+    
     /* detect how many CPUs are available */
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
-    printf("%d cpus available\n", CPU_COUNT(&cpu_set));
+    int ncpus = CPU_COUNT(&cpu_set);
+
+    int rc, rank, size;
+	rc = MPI_Init(&argc, &argv);
+	MPI_Comm_size(MPI_COMM_WORLD, &size);
+	MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+    // double start, end;
+    // start = MPI_Wtime();
 
     /* argument parsing */
     assert(argc == 9);
@@ -65,30 +80,159 @@ int main(int argc, char** argv) {
 
     /* allocate memory for image */
     int* image = (int*)malloc(width * height * sizeof(int));
+    memset(image, 0, width * height);
     assert(image);
 
     /* mandelbrot set */
-    for (int j = 0; j < height; ++j) {
-        double y0 = j * ((upper - lower) / height) + lower;
-        for (int i = 0; i < width; ++i) {
-            double x0 = i * ((right - left) / width) + left;
+    // printf("rank: %d, size: %d\n", rank, size);
 
-            int repeats = 0;
-            double x = 0;
-            double y = 0;
-            double length_squared = 0;
-            while (repeats < iters && length_squared < 4) {
-                double temp = x * x - y * y + x0;
-                y = 2 * x * y + y0;
-                x = temp;
-                length_squared = x * x + y * y;
-                ++repeats;
+    if(width < 100 && height < 100){
+        #pragma omp parallel for schedule(dynamic, CHUNK)
+            for (int j = 0; j < height; ++j) {
+                double y0 = j * ((upper - lower) / height) + lower;
+                #pragma omp parallel for schedule(dynamic, CHUNK)
+                    for (int i = 0; i < width; ++i) {
+                        double x0 = i * ((right - left) / width) + left;
+
+                        int repeats = 0;
+                        double x = 0;
+                        double y = 0;
+                        double length_squared = 0;
+                        while (repeats < iters && length_squared < 4) {
+                            double temp = x * x - y * y + x0;
+                            y = 2 * x * y + y0;
+                            x = temp;
+                            length_squared = x * x + y * y;
+                            ++repeats;
+                        }
+                        image[j * width + i] = repeats;
+                    }
             }
-            image[j * width + i] = repeats;
+        if(rank == 0){
+            write_png(filename, iters, width, height, image);
         }
     }
+    else{
+        #pragma omp parallel for schedule(dynamic, CHUNK)
+            for (int j = rank; j < height; j += size) {
+                // latest version
+                double y0 = j * ((upper - lower) / height) + lower;
+                int i0 = 0;
+                int i1 = 1;
+                int i = 1;
+
+                __m128d x0;
+                x0[0] = i0 * ((right - left) / width) + left;
+                x0[1] = i1 * ((right - left) / width) + left;
+                
+                int repeat0 = 0;
+                int repeat1 = 0;
+                
+                __m128d x;
+                __m128d y;
+                __m128d length_squared;
+                __m128d x_square;
+                __m128d y_square;
+                __m128d two;
+                __m128d Y0;
+                
+                x = _mm_set_pd(0.0, 0.0);
+                y = _mm_set_pd(0.0, 0.0);
+                length_squared = _mm_set_pd(0.0, 0.0);
+                x_square = _mm_set_pd(0.0, 0.0);
+                y_square = _mm_set_pd(0.0, 0.0);
+                two = _mm_set_pd(2.0, 2.0);
+                Y0 = _mm_set_pd(y0, y0);
+
+                int flag_0 = 0;
+                int flag_1 = 0;
+
+                while(i < width){
+                    while((repeat1 < iters && length_squared[1] < 4) && (repeat0 < iters && length_squared[0] < 4)){
+                        y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
+                        x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
+                        x_square = _mm_mul_pd(x, x);
+                        y_square = _mm_mul_pd(y, y);
+                        length_squared = _mm_add_pd(x_square, y_square);
+                        repeat0++;
+                        repeat1++;
+                    }
+                    if(repeat0 >= iters || length_squared[0] >= 4){
+                        image[j * width + i0] = repeat0;
+                        repeat0 = 0;
+                        x[0] = 0;
+                        y[0] = 0;
+                        length_squared[0] = 0;
+                        x_square[0] = 0;
+                        y_square[0] = 0;
+
+                        i0 = std::max(i0, i1) + 1;
+                        
+                        if(i0 >= width){
+                            flag_0 = 1;
+                            break;
+                        } 
+                        else{
+                            x0[0] = i0 * ((right - left) / width) + left;
+                        }  
+                    }
+                    if((repeat1 >= iters || length_squared[1] >= 4)){
+                        image[j * width + i1] = repeat1;
+                        repeat1 = 0;
+                        x[1] = 0;
+                        y[1] = 0;
+                        length_squared[1] = 0;
+                        x_square[1] = 0;
+                        y_square[1] = 0;
+
+                        i1 = std::max(i0, i1) + 1;
+                        
+                        if(i1 >= width){
+                            flag_1 = 1;
+                            break;
+                        } 
+                        else{
+                            x0[1] = i1 * ((right - left) / width) + left;
+                        }
+                    }
+                    // i = std::max(i0, i1);
+                }
+                if(flag_0){ // do the remaining pixel
+                    while((repeat1 < iters && length_squared[1] < 4)){
+                        y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
+                        x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
+                        x_square = _mm_mul_pd(x, x);
+                        y_square = _mm_mul_pd(y, y);
+                        length_squared = _mm_add_pd(x_square, y_square);
+                        repeat1++;
+                    }
+                    image[j * width + i1] = repeat1;
+                }
+                else if(flag_1){
+                    while((repeat0 < iters && length_squared[0] < 4)){
+                        y = _mm_add_pd(_mm_mul_pd(_mm_mul_pd(x, y), two), Y0);
+                        x = _mm_add_pd(_mm_sub_pd(x_square, y_square), x0);
+                        x_square = _mm_mul_pd(x, x);
+                        y_square = _mm_mul_pd(y, y);
+                        length_squared = _mm_add_pd(x_square, y_square);
+                        repeat0++;
+                    }
+                    image[j * width + i0] = repeat0;
+                }
+            }
+
+        int* temp = (int*)malloc(width * height * sizeof(int));
+        memset(temp, 0, width * height);
+        MPI_Reduce(image, temp, width * height, MPI_INT, MPI_SUM, 0, MPI_COMM_WORLD);
+        if(rank == 0){
+            write_png(filename, iters, width, height, temp);
+        }
+        free(temp);
+    }
+    // end = MPI_Wtime();
+    // printf("time: %f\n", end - start);
 
     /* draw and cleanup */
-    write_png(filename, iters, width, height, image);
     free(image);
+    MPI_Finalize();
 }
