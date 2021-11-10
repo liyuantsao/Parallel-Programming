@@ -23,6 +23,9 @@ int width;
 int height;
 int ncpus;
 
+int count = 0;
+
+pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 /* allocate memory for image */
 int* image;
@@ -66,20 +69,25 @@ void write_png(const char* filename, int iters, int width, int height, const int
 
 void* compute(void* t){
     int* tid = (int*)t;
-
-    for (int j = *tid; j < height; j += ncpus) {
+    int j;
+    
+    while(count < height){
+        pthread_mutex_lock(&mutex);
+        j = count++;
+        pthread_mutex_unlock(&mutex);
+    // for (int j = *tid; j < height; j += ncpus) {
         double y0 = j * ((upper - lower) / height) + lower;
+        double offset = (right - left) / width;
+        
         int i0 = 0;
         int i1 = 1;
         int i = 1;
-
-        __m128d x0;
-        x0[0] = i0 * ((right - left) / width) + left;
-        x0[1] = i1 * ((right - left) / width) + left;
-        
         int repeat0 = 0;
         int repeat1 = 0;
-        
+        int flag_0 = 0;
+        int flag_1 = 0;
+
+        __m128d x0;
         __m128d x;
         __m128d y;
         __m128d length_squared;
@@ -87,7 +95,10 @@ void* compute(void* t){
         __m128d y_square;
         __m128d two;
         __m128d Y0;
-        
+
+        x0[0] = i0 * offset + left;
+        x0[1] = i1 * offset + left;
+    
         x = _mm_set_pd(0.0, 0.0);
         y = _mm_set_pd(0.0, 0.0);
         length_squared = _mm_set_pd(0.0, 0.0);
@@ -95,9 +106,6 @@ void* compute(void* t){
         y_square = _mm_set_pd(0.0, 0.0);
         two = _mm_set_pd(2.0, 2.0);
         Y0 = _mm_set_pd(y0, y0);
-
-        int flag_0 = 0;
-        int flag_1 = 0;
 
         while(i < width){
             while((repeat1 < iters && length_squared[1] < 4) && (repeat0 < iters && length_squared[0] < 4)){
@@ -125,7 +133,7 @@ void* compute(void* t){
                     break;
                 } 
                 else{
-                    x0[0] = i0 * ((right - left) / width) + left;
+                    x0[0] = i0 * offset + left;
                 }  
             }
             if((repeat1 >= iters || length_squared[1] >= 4)){
@@ -144,7 +152,7 @@ void* compute(void* t){
                     break;
                 } 
                 else{
-                    x0[1] = i1 * ((right - left) / width) + left;
+                    x0[1] = i1 * offset + left;
                 }
             }
             // i = std::max(i0, i1);
@@ -176,9 +184,6 @@ void* compute(void* t){
 }
 
 int main(int argc, char** argv) {
-    // time_t time_start;
-    // time_t time_end;
-    // time(&time_start);
     /* detect how many CPUs are available */
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
@@ -216,7 +221,5 @@ int main(int argc, char** argv) {
     /* draw and cleanup */
     write_png(filename, iters, width, height, image);
     free(image);
-    // time(&time_end);
-    // printf("elapsed time: %f\n", difftime(time_end, time_start));
     pthread_exit(NULL);
 }
