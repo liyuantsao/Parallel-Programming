@@ -115,7 +115,6 @@ int main(int argc, char** argv) {
     else{
         #pragma omp parallel for schedule(dynamic, CHUNK)
             for (int j = rank; j < height; j += size) {
-                // latest version
                 double y0 = j * ((upper - lower) / height) + lower;
                 int i0 = 0;
                 int i1 = 1;
@@ -229,10 +228,8 @@ int main(int argc, char** argv) {
         }
         free(temp);
     }
-    // end = MPI_Wtime();
-    // printf("time: %f\n", end - start);
-
     /* draw and cleanup */
     free(image);
+     
     MPI_Finalize();
 }

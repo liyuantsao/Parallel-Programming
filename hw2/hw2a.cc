@@ -13,7 +13,6 @@
 #include <time.h>
 #include <algorithm>
 
-
 int iters;
 double left;
 double right;
@@ -184,11 +183,10 @@ void* compute(void* t){
 }
 
 int main(int argc, char** argv) {
-    /* detect how many CPUs are available */
+
     cpu_set_t cpu_set;
     sched_getaffinity(0, sizeof(cpu_set), &cpu_set);
     ncpus = CPU_COUNT(&cpu_set);
-    // printf("%d cpus available\n", CPU_COUNT(&cpu_set));
 
     /* argument parsing */
     assert(argc == 9);
@@ -221,5 +219,6 @@ int main(int argc, char** argv) {
     /* draw and cleanup */
     write_png(filename, iters, width, height, image);
     free(image);
+
     pthread_exit(NULL);
 }

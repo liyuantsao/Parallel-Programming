@@ -32,7 +32,7 @@ make
 # hw2-diff ./testcases/fast15.png out.png
 # srun -n4 -c6 ./hw2b out.png 641 -0.2931209325179713 -0.2741427339562606 -0.6337125743279389 -0.6429654881215695 1920 1080
 # hw2-diff ./testcases/fast16.png out.png
-# srun -n4 -c6 ./hw2b out.png 174170376 -0.7894722222222222 -0.7825277777777778 0.145046875 0.148953125 2549 1439
+# srun -n4 -c8 ./hw2b out.png 174170376 -0.7894722222222222 -0.7825277777777778 0.145046875 0.148953125 2549 1439
 # hw2-diff ./testcases/slow01.png out.png
 # srun -n4 -c6 ./hw2b out.png 54564 -0.34499 -0.34501 -0.61249 -0.61251 800 800
 # hw2-diff ./testcases/slow02.png out.png
@@ -82,8 +82,8 @@ make
 # hw2-diff ./testcases/strict08.png out.png
 # srun -n4 -c6 ./hw2b out.png 10000 -0.5 0.5 -0.5 0.5 123 234
 # hw2-diff ./testcases/strict09.png out.png
-srun -n4 -c6 ./hw2b out.png 10000 -5 6 -7 8 56 78
-hw2-diff ./testcases/strict10.png out.png
+# srun -n4 -c6 ./hw2b out.png 10000 -5 6 -7 8 56 78
+# hw2-diff ./testcases/strict10.png out.png
 # srun -n4 -c6 ./hw2b out.png 10000 -0.5 0.5 -0.5 0.5 491 935
 # hw2-diff ./testcases/strict11.png out.png
 # srun -n4 -c6 ./hw2b out.png 10000 -1.25 0 0 1.25 483 631
@@ -130,8 +130,8 @@ hw2-diff ./testcases/strict10.png out.png
 # hw2-diff ./testcases/strict32.png out.png
 # srun -n4 -c6 ./hw2b out.png 10000 -0.29899250664589705 -0.2772002993319328 -0.6327591639095336 -0.6433840614725646 7680 4320
 # hw2-diff ./testcases/strict33.png out.png
-# srun -n4 -c6 ./hw2b out.png 10000 -0.5506164691618783 -0.5506164628264113 0.6273445437118131 0.6273445403522527 7680 4320
-# hw2-diff ./testcases/strict34.png out.png
+srun -n4 -c6 ./hw2b out.png 10000 -0.5506164691618783 -0.5506164628264113 0.6273445437118131 0.6273445403522527 7680 4320
+hw2-diff ./testcases/strict34.png out.png
 # srun -n4 -c6 ./hw2b out.png 10000 -0.2931209325179713 -0.2741427339562606 -0.6337125743279389 -0.6429654881215695 7680 4320
 # hw2-diff ./testcases/strict35.png out.png
 # srun -n4 -c6 ./hw2b out.png 10000 -0.28727240825213607 -0.2791226112721823 -0.6345413372717312 -0.6385148107626897 7680 4320

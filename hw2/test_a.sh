@@ -1,7 +1,7 @@
 make clean
 make
-srun -n1 -c5 ./hw2a out.png 2602 -3 0.2 -3 0.2 979 2355
-hw2-diff ./testcases/fast01.png out.png
+# srun -n1 -c5 ./hw2a out.png 2602 -3 0.2 -3 0.2 979 2355
+# hw2-diff ./testcases/fast01.png out.png
 # srun -n1 -c5 ./hw2a out.png 13688 0 4.5 0 -4.5 3107 1283
 # hw2-diff ./testcases/fast02.png out.png
 # srun -n1 -c5 ./hw2a out.png 18667 -2 2 -2 2 575 575
@@ -32,8 +32,8 @@ hw2-diff ./testcases/fast01.png out.png
 # hw2-diff ./testcases/fast15.png out.png
 # srun -n1 -c12 ./hw2a out.png 641 -0.2931209325179713 -0.2741427339562606 -0.6337125743279389 -0.6429654881215695 1920 1080
 # hw2-diff ./testcases/fast16.png out.png
-# srun -n1 -c12 ./hw2a out.png 174170376 -0.7894722222222222 -0.7825277777777778 0.145046875 0.148953125 2549 1439
-# hw2-diff ./testcases/slow01.png out.png
+srun -n1 -c4 ./hw2a out.png 174170376 -0.7894722222222222 -0.7825277777777778 0.145046875 0.148953125 2549 1439
+hw2-diff ./testcases/slow01.png out.png
 # srun -n1 -c12 ./hw2a out.png 54564 -0.34499 -0.34501 -0.61249 -0.61251 800 800
 # hw2-diff ./testcases/slow02.png out.png
 # srun -n1 -c12 ./hw2a out.png 206191 -0.5506211524210792 -0.5506132348972915 0.6273469513234796 0.6273427528329604 1920 1080
