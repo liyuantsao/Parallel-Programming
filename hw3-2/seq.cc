@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <time.h>
 
 const int INF = ((1 << 30) - 1);
 const int V = 50010;
@@ -14,10 +15,29 @@ int n, m;
 static int Dist[V][V];
 
 int main(int argc, char* argv[]) {
+
+    struct timespec start, end, temp;
+    double time_used;
+    clock_gettime(CLOCK_MONOTONIC, &start);
+    
     input(argv[1]);
     int B = 512;
     block_FW(B);
     output(argv[2]);
+
+
+    clock_gettime(CLOCK_MONOTONIC, &end);
+    if ((end.tv_nsec - start.tv_nsec) < 0) {
+        temp.tv_sec = end.tv_sec-start.tv_sec-1;
+        temp.tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
+    } else {
+        temp.tv_sec = end.tv_sec - start.tv_sec;
+        temp.tv_nsec = end.tv_nsec - start.tv_nsec;
+    }
+    time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
+    
+    printf("%f second\n", time_used);
+
     return 0;
 }
 

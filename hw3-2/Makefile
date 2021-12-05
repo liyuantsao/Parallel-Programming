@@ -1,6 +1,7 @@
 NVFLAGS  := -std=c++11 -O3 -Xptxas="-v" -arch=sm_61 
-LDFLAGS  := -lm
+LDFLAGS  := -lm 
 EXES     := hw3-2
+CXXFLAGS += -lrt
 
 alls: $(EXES)
 
