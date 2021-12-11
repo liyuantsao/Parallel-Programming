@@ -1,40 +1,50 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
+#include <cmath>
+
+#define B 32
 
 const int INF = ((1 << 30) - 1);
-// const int V;
+
 void input(char* inFileName);
 void output(char* outFileName);
 
-__global__ void block_FW(int B, int* dist_d, int n);
+__global__ void block_FW_Phase1(int* dist_d, int n, int round);
+__global__ void block_FW_Phase2(int* dist_d, int n, int round);
+__global__ void block_FW_Phase3(int* dist_d, int n, int round);
 
-__host__ __device__ int ceil(int a, int b){
+int ceil_cus(int a, int b){
     return (a + b - 1) / b;
 }
-__device__ void cal(int B, int* dist_d, int n, int Round, int block_start_x, int block_start_y, int block_width, int block_height);
 
 int n, m;
 int* Dist;
 
-int thread = 128;
-
 int main(int argc, char* argv[]) {
-    // input(argv[1]);
+
+    // struct timespec start, end, temp;
+    // double time_used;
+    // clock_gettime(CLOCK_MONOTONIC, &start);
+
     FILE* file = fopen(argv[1], "rb");
 
     fread(&n, sizeof(int), 1, file);
     fread(&m, sizeof(int), 1, file);
 
-    int matrix_size = n * n * sizeof(int);
+    size_t matrix_size = n * n * sizeof(int);
 
     Dist = (int*)malloc(matrix_size);
+
+    // printf("n: %d, m: %d\n", n, m);
     
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
             if (i == j) {
                 Dist[i * n + j] = 0;
-            } else {
+            } 
+            else {
                 Dist[i * n + j] = INF;
             }
         }
@@ -46,119 +56,172 @@ int main(int argc, char* argv[]) {
         Dist[pair[0] * n + pair[1]] = pair[2];
     }
     fclose(file);
-
-    int B = ceil(n, 3);
+    // int B = ceil(sqrt(n));
     int* dist_d;
 
     cudaMalloc(&dist_d, matrix_size);
     cudaMemcpy(dist_d, Dist, matrix_size, cudaMemcpyHostToDevice);
 
-    int grid_dim = ceil(n, B);
+    int round = ceil_cus(n, B);
 
-    dim3 grid(grid_dim, grid_dim);
-    dim3 block(thread, 1);
+    // printf("n: %d, m: %d, B: %d, round: %d\n", n, m, B, round);
 
-    block_FW<<<grid, block>>>(B, dist_d, n);
+    dim3 grid2(round - 1, 2);
+    dim3 grid3(round - 1, round - 1);
+    dim3 block(32, 32);
+
+    size_t base_smem_size = B * B * sizeof(int);
+
+    for(int r = 0; r < round; r++){
+        block_FW_Phase1<<<1, block, base_smem_size>>>(dist_d, n, r);
+        // printf("return from kernel 1, round: %d\n", r);
+        block_FW_Phase2<<<grid2, block, 2 * base_smem_size>>>(dist_d, n, r);
+        // printf("return from kernel 2, round: %d\n", r);
+        block_FW_Phase3<<<grid3, block, 2 * base_smem_size>>>(dist_d, n, r);
+        // printf("return from kernel 3, round: %d\n", r);
+    }
+    
     cudaMemcpy(Dist, dist_d, matrix_size, cudaMemcpyDeviceToHost);
 
+    // for (int i = 0; i < n; i++) {
+    //     for (int j = 0; j < n; j++) {
+    //         printf("%3d ", Dist[i * n + j]);
+    //     }
+    //     printf("\n");
+    // }
+
     FILE* outfile = fopen(argv[2], "w");
-    for (int i = 0; i < n; ++i) {
-        for (int j = 0; j < n; ++j) {
-            if (Dist[i * n + j] >= INF) Dist[i * n + j] = INF;
-        }
-        fwrite(&Dist[i * n], sizeof(int), n, outfile);
-    }
+    fwrite(Dist, sizeof(int), n*n, outfile);
     fclose(outfile);
+
+    // clock_gettime(CLOCK_MONOTONIC, &end);
+    // if ((end.tv_nsec - start.tv_nsec) < 0) {
+    //     temp.tv_sec = end.tv_sec-start.tv_sec-1;
+    //     temp.tv_nsec = 1000000000 + end.tv_nsec - start.tv_nsec;
+    // } else {
+    //     temp.tv_sec = end.tv_sec - start.tv_sec;
+    //     temp.tv_nsec = end.tv_nsec - start.tv_nsec;
+    // }
+    // time_used = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
+    
+    // printf("%f second\n", time_used);
+    free(Dist);
+    cudaFree(dist_d);
 
     return 0;
 }
 
-// void input(char* infile) {
-//     FILE* file = fopen(infile, "rb");
-//     fread(&n, sizeof(int), 1, file);
-//     fread(&m, sizeof(int), 1, file);
+__global__ void block_FW_Phase1(int* dist_d, int n, int round) {
+    __shared__ int s_dist[B][B];
 
-//     for (int i = 0; i < n; ++i) {
-//         for (int j = 0; j < n; ++j) {
-//             if (i == j) {
-//                 Dist[i][j] = 0;
-//             } else {
-//                 Dist[i][j] = INF;
-//             }
-//         }
-//     }
+    int ori_i = round * B + threadIdx.y;
+    int ori_j = round * B + threadIdx.x;
+    int i = threadIdx.y;
+    int j = threadIdx.x;
 
-//     int pair[3];
-//     for (int i = 0; i < m; ++i) {
-//         fread(pair, sizeof(int), 3, file);
-//         Dist[pair[0]][pair[1]] = pair[2];
-//     }
-//     fclose(file);
-// }
+    if(ori_i >= n || ori_j >= n) return;
 
-// void output(char* outFileName) {
-//     FILE* outfile = fopen(outFileName, "w");
-//     for (int i = 0; i < n; ++i) {
-//         for (int j = 0; j < n; ++j) {
-//             if (Dist[i][j] >= INF) Dist[i][j] = INF;
-//         }
-//         fwrite(Dist[i], sizeof(int), n, outfile);
-//     }
-//     fclose(outfile);
-// }
+    s_dist[i][j] = dist_d[ori_i * n + ori_j];
 
-// int ceil(int a, int b) { return (a + b - 1) / b; }
+    __syncthreads();
 
-__global__ void block_FW(int B, int* dist_d, int n) {
-    int round = ceil(n, B);
-    for (int r = 0; r < round; ++r) {
-        // printf("%d %d\n", r, round);
-        // fflush(stdout);
-        /* Phase 1*/
-        cal(B, dist_d, n, r, r, r, 1, 1);
-
-        /* Phase 2*/
-        cal(B, dist_d, n, r, r, 0, r, 1);
-        cal(B, dist_d, n, r, r, r + 1, round - r - 1, 1);
-        cal(B, dist_d, n, r, 0, r, 1, r);
-        cal(B, dist_d, n, r, r + 1, r, 1, round - r - 1);
-
-        /* Phase 3*/
-        cal(B, dist_d, n, r, 0, 0, r, r);
-        cal(B, dist_d, n, r, 0, r + 1, round - r - 1, r);
-        cal(B, dist_d, n, r, r + 1, 0, r, round - r - 1);
-        cal(B, dist_d, n, r, r + 1, r + 1, round - r - 1, round - r - 1);
+    for (int k = 0; k < B && (k + (round * B)) < n; k++) {
+        if((s_dist[i][k] + s_dist[k][j]) < s_dist[i][j]){
+            s_dist[i][j] = s_dist[i][k] + s_dist[k][j];
+        }
+        __syncthreads();
     }
+
+    dist_d[ori_i * n + ori_j] = s_dist[i][j];
 }
 
-__device__ void cal(
-    int B, int* dist_d, int n, int Round, int block_start_x, int block_start_y, int block_width, int block_height) {
-    int block_end_x = block_start_x + block_height;
-    int block_end_y = block_start_y + block_width;
+__global__ void block_FW_Phase2(int* dist_d, int n, int round){
+    // for z == 0, it stores things of the block itself
+    // for z == 1, it stores things of the pivot block
+    __shared__ int s_dist[2][B][B];
 
-    for (int b_i = block_start_x; b_i < block_end_x; ++b_i) {
-        for (int b_j = block_start_y; b_j < block_end_y; ++b_j) {
-            // To calculate B*B elements in the block (b_i, b_j)
-            // For each block, it need to compute B times
-            for (int k = Round * B; k < (Round + 1) * B && k < n; ++k) {
-                // To calculate original index of elements in the block (b_i, b_j)
-                // For instance, original index of (0,0) in block (1,2) is (2,5) for V=6,B=2
-                int block_internal_start_x = b_i * B;
-                int block_internal_end_x = (b_i + 1) * B;
-                int block_internal_start_y = b_j * B;
-                int block_internal_end_y = (b_j + 1) * B;
+    int ori_i, ori_j;
 
-                if (block_internal_end_x > n) block_internal_end_x = n;
-                if (block_internal_end_y > n) block_internal_end_y = n;
-
-                for (int i = block_internal_start_x; i < block_internal_end_x; ++i) {
-                    for (int j = block_internal_start_y; j < block_internal_end_y; ++j) {
-                        if (dist_d[i*n + k] + dist_d[k*n + j] < dist_d[i*n + j]) {
-                            dist_d[i*n + j] = dist_d[i*n + k] + dist_d[k*n + j];
-                        }
-                    }
-                }
-            }
-        }
+    if(blockIdx.y == 0){ // pivot row
+        ori_i = round * B + threadIdx.y;
+        ori_j = blockIdx.x * B + threadIdx.x + (blockIdx.x >= round) * B;
     }
+    else{ // pivot column
+        ori_i = blockIdx.x * B + threadIdx.y + (blockIdx.x >= round) * B;
+        ori_j = round * B + threadIdx.x;
+    }
+
+    int pivot_i = round * B + threadIdx.y;
+    int pivot_j = round * B + threadIdx.x;
+
+    int i = threadIdx.y;
+    int j = threadIdx.x;
+
+    if(!(ori_i >= n || ori_j >= n)){
+        s_dist[0][i][j] = dist_d[ori_i * n + ori_j]; // store value in the pivot row/col blocj itself
+    }
+
+    // if we return when either pivot_i or pivot_j >= n, we may lose some information of pivot row/col
+
+    if(pivot_i < n && pivot_j < n){
+        s_dist[1][i][j] = dist_d[pivot_i * n + pivot_j]; // store value in pivot block
+    }
+    
+    __syncthreads();
+
+    if(ori_i >= n || ori_j >= n) return;
+
+    for (int k = 0; k < B && (k + (round * B)) < n; k++) {
+        if(s_dist[0][i][j] > (s_dist[!blockIdx.y][i][k] + s_dist[blockIdx.y][k][j])){
+            s_dist[0][i][j] = s_dist[!blockIdx.y][i][k] + s_dist[blockIdx.y][k][j];
+        }
+        __syncthreads();
+    }
+    
+    dist_d[ori_i * n + ori_j] = s_dist[0][i][j];
+}
+
+__global__ void block_FW_Phase3(int* dist_d, int n, int round){
+    __shared__ int s_dist[2][B][B];
+
+    int ori_i = blockIdx.y * B + threadIdx.y + ((blockIdx.y >= round) * B);
+    int ori_j = blockIdx.x * B + threadIdx.x + ((blockIdx.x >= round) * B);
+    // if(blockIdx.x >= round) ori_j += B;
+    // if(blockIdx.y >= round) ori_i += B;
+
+    int pivot_row_i = round * B + threadIdx.y;
+    int pivot_row_j = ori_j;
+    int pivot_col_i = ori_i;
+    int pivot_col_j = round * B + threadIdx.x;
+
+    int i = threadIdx.y;
+    int j = threadIdx.x;
+
+    // if(ori_i >= n || ori_j >= n) return;
+
+    // if(!(ori_i >= n || ori_j >= n)){
+    //     tmp = dist_d[ori_i * n + ori_j]; // store things of the block itself
+    // }
+    
+    if(pivot_row_i < n && pivot_row_j < n){
+        s_dist[0][i][j] = dist_d[pivot_row_i * n + pivot_row_j]; // store things of the pivot row block
+    } 
+    if(pivot_col_i < n && pivot_col_j < n){
+        s_dist[1][i][j] = dist_d[pivot_col_i * n + pivot_col_j]; // store things of the pivot column block
+    }
+    
+    __syncthreads();
+
+    if(ori_i >= n || ori_j >= n) return;
+
+    int self_dis = dist_d[ori_i * n + ori_j];
+
+    for (int k = 0; k < B && (k + (round * B)) < n; k++) {
+        int temp = s_dist[1][i][k] + s_dist[0][k][j];
+        if(self_dis > temp){
+            self_dis = temp;
+        }
+        // __syncthreads();
+    }
+    dist_d[ori_i * n + ori_j] = self_dis;
 }
