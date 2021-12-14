@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <cuda.h>
+#include <cuda_runtime.h>
 #include <omp.h>
 
 #define B 64
@@ -14,7 +15,7 @@ void output(char* outFileName);
 
 __global__ void block_FW_Phase1(int* dist_d, int n, int round);
 __global__ void block_FW_Phase2(int* dist_d, int n, int round);
-__global__ void block_FW_Phase3(int* dist_d, int n, int round);
+__global__ void block_FW_Phase3(int* dist_d, int n, int round, int start_idx_y);
 
 int ceil(int a, int b){
     return (a + b - 1) / b;
@@ -24,21 +25,23 @@ int input_n, n, m;
 int* Dist;
 
 int main(int argc, char* argv[]) {
-    int num_gpus = -1, num_cpus = -1, gpu_id = -1;
+    // int num_gpus = -1, num_cpus = -1, gpu_id = -1;
 
-    cudaGetDeviceCount(&num_gpus);
-    num_cpus = omp_get_max_threads();
-    omp_set_num_threads(num_cpus);
-    // printf("there is %d cpus and %d gpus\n", num_cpus, num_gpus);
-    #pragma omp parallel
-    {
-        unsigned int cpu_thread_id = omp_get_thread_num(); 
-        unsigned int num_cpu_threads = omp_get_num_threads(); 
-        cudaSetDevice(cpu_thread_id);
-        int gpu_id = -1;
-        cudaGetDevice(&gpu_id);
-        // printf("CPU thread %d (of %d) uses CUDA device %d\n", cpu_thread_id, num_cpu_threads, gpu_id);
-    }
+    // cudaGetDeviceCount(&num_gpus);
+    // num_cpus = omp_get_max_threads();
+    // omp_set_num_threads(num_cpus);
+    
+    // unsigned int cpu_thread_id;
+    // unsigned int num_cpu_threads;
+    
+    // #pragma omp parallel
+    // {
+    //     cpu_thread_id = omp_get_thread_num(); 
+    //     num_cpu_threads = omp_get_num_threads(); 
+    //     cudaSetDevice(cpu_thread_id);
+    //     cudaGetDevice(&gpu_id);
+    //     // printf("CPU thread %d (of %d) uses CUDA device %d\n", cpu_thread_id, num_cpu_threads, gpu_id);
+    // }
 
     FILE* file = fopen(argv[1], "rb");
 
@@ -51,8 +54,6 @@ int main(int argc, char* argv[]) {
     size_t matrix_size = n * n * sizeof(int);
 
     Dist = (int*)malloc(matrix_size);
-
-    // printf("n: %d, m: %d\n", n, m);
     
     for (int i = 0; i < n; i++) {
         for (int j = 0; j < n; j++) {
@@ -71,27 +72,64 @@ int main(int argc, char* argv[]) {
         Dist[pair[0] * n + pair[1]] = pair[2];
     }
     fclose(file);
-    // int B = ceil(sqrt(n));
-    int* dist_d;
 
-    cudaMalloc(&dist_d, matrix_size);
-    cudaMemcpy(dist_d, Dist, matrix_size, cudaMemcpyHostToDevice);
+    int* dist_d[2];
+    cudaHostRegister(Dist, matrix_size, cudaHostRegisterDefault);
 
-    // printf("input_n: %d, m: %d, B: %d, round: %d\n", input_n, m, B, round);
+    #pragma omp parallel
+    {
+        unsigned int cpu_thread_id = omp_get_thread_num(); 
+        unsigned int num_threads = omp_get_num_threads();
+        cudaSetDevice(cpu_thread_id);
 
-    dim3 grid2(round - 1, 2);
-    dim3 grid3(round - 1, round - 1);
-    dim3 block(32, 32);
+        cudaMalloc(&dist_d[cpu_thread_id], matrix_size);
+        // cudaMemcpy(dist_d, Dist, matrix_size, cudaMemcpyHostToDevice);
 
-    // size_t base_smem_size = B * B * sizeof(int);
+        int round_per_GPU = round / 2;
+        if(cpu_thread_id == 1){
+            round_per_GPU += round % 2;
+        } 
 
-    for(int r = 0; r < round; r++){
-        block_FW_Phase1<<<1, block>>>(dist_d, n, r);
-        block_FW_Phase2<<<grid2, block>>>(dist_d, n, r);
-        block_FW_Phase3<<<grid3, block>>>(dist_d, n, r);
+        int start_idx_y;
+        size_t copy_pos;
+        size_t copy_size;
+
+        if(cpu_thread_id == 0){
+            start_idx_y = 0;
+            copy_pos = 0;
+            copy_size = round_per_GPU * B * n * sizeof(int);
+        } 
+        else{
+            start_idx_y = round_per_GPU - round % 2;
+            copy_pos = start_idx_y * B * n;
+            copy_size = round_per_GPU * B * n * sizeof(int);
+        }
+
+        dim3 grid2(round - 1, 2);
+        dim3 grid3(round, round_per_GPU);
+        dim3 block(32, 32);
+
+        // copy data in Dist to the corresponding device
+        cudaMemcpy(dist_d[cpu_thread_id], Dist, matrix_size, cudaMemcpyHostToDevice);
+
+        for(int r = 0; r < round; r++){
+            // copy the row of pivot is enough
+            if(r >= start_idx_y && r < start_idx_y + round_per_GPU){
+                cudaMemcpy(Dist + r * B * n, dist_d[cpu_thread_id] + r * B * n, B * n * sizeof(int), cudaMemcpyDeviceToHost);
+            }
+            #pragma omp barrier
+
+            cudaMemcpy(dist_d[cpu_thread_id] + r * B * n, Dist + r * B * n, B * n * sizeof(int), cudaMemcpyHostToDevice);
+
+            block_FW_Phase1<<<1, block>>>(dist_d[cpu_thread_id], n, r);
+            block_FW_Phase2<<<grid2, block>>>(dist_d[cpu_thread_id], n, r);
+            block_FW_Phase3<<<grid3, block>>>(dist_d[cpu_thread_id], n, r, start_idx_y);
+        }
+        cudaMemcpy(Dist + copy_pos, dist_d[cpu_thread_id] + copy_pos, copy_size, cudaMemcpyDeviceToHost);
+        #pragma omp barrier
     }
     
-    cudaMemcpy(Dist, dist_d, matrix_size, cudaMemcpyDeviceToHost);
+    // cudaMemcpy(Dist, dist_d, matrix_size, cudaMemcpyDeviceToHost);
 
     FILE* outfile = fopen(argv[2], "w");
     for(int i = 0; i < input_n; i++){
@@ -157,9 +195,6 @@ __global__ void block_FW_Phase2(int* dist_d, int n, int round){
     if(blockIdx.y == 0){ // block with blockIdx.y == 0 handles pivot row
         ori_i = round * B + threadIdx.y;
         ori_j = blockIdx.x * B + threadIdx.x + ((blockIdx.x >= round) * B);
-        // if(blockIdx.x == round){
-        //     printf("pivot_j: %d, ori_j: %d\n", round * B + threadIdx.x, ori_j);
-        // }
     }
     else{ // block with blockIdx.y == 1 handles pivot column
         ori_i = blockIdx.x * B + threadIdx.y + ((blockIdx.x >= round) * B);
@@ -211,12 +246,17 @@ __global__ void block_FW_Phase2(int* dist_d, int n, int round){
     dist_d[(ori_i + half_B) * n + (ori_j + half_B)] = s_dist[0][i + half_B][j + half_B];
 }
 
-__global__ void block_FW_Phase3(int* dist_d, int n, int round){
+__global__ void block_FW_Phase3(int* dist_d, int n, int round, int start_idx_y){
     __shared__ int s_dist[2][B][B];
 
+    int block_y = blockIdx.y + start_idx_y;
+
+    if(blockIdx.x == round || block_y == round) return;
     // if blockIdx.y >= round or blockIdx.x >= round, the position of i or j adds B more to move across the pivot row/col 
-    int ori_i = blockIdx.y * B + threadIdx.y + ((blockIdx.y >= round) * B);
-    int ori_j = blockIdx.x * B + threadIdx.x + ((blockIdx.x >= round) * B);
+    // int ori_i = blockIdx.y * B + threadIdx.y + ((blockIdx.y >= round) * B);
+    // int ori_j = blockIdx.x * B + threadIdx.x + ((blockIdx.x >= round) * B);
+    int ori_i = block_y * B + threadIdx.y;
+    int ori_j = blockIdx.x * B + threadIdx.x;
 
     int pivot_row_i = round * B + threadIdx.y;
     int pivot_row_j = ori_j;
