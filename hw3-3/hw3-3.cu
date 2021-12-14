@@ -25,24 +25,6 @@ int input_n, n, m;
 int* Dist;
 
 int main(int argc, char* argv[]) {
-    // int num_gpus = -1, num_cpus = -1, gpu_id = -1;
-
-    // cudaGetDeviceCount(&num_gpus);
-    // num_cpus = omp_get_max_threads();
-    // omp_set_num_threads(num_cpus);
-    
-    // unsigned int cpu_thread_id;
-    // unsigned int num_cpu_threads;
-    
-    // #pragma omp parallel
-    // {
-    //     cpu_thread_id = omp_get_thread_num(); 
-    //     num_cpu_threads = omp_get_num_threads(); 
-    //     cudaSetDevice(cpu_thread_id);
-    //     cudaGetDevice(&gpu_id);
-    //     // printf("CPU thread %d (of %d) uses CUDA device %d\n", cpu_thread_id, num_cpu_threads, gpu_id);
-    // }
-
     FILE* file = fopen(argv[1], "rb");
 
     fread(&input_n, sizeof(int), 1, file);
@@ -74,7 +56,6 @@ int main(int argc, char* argv[]) {
     fclose(file);
 
     int* dist_d[2];
-    cudaHostRegister(Dist, matrix_size, cudaHostRegisterDefault);
 
     #pragma omp parallel
     {
@@ -83,7 +64,6 @@ int main(int argc, char* argv[]) {
         cudaSetDevice(cpu_thread_id);
 
         cudaMalloc(&dist_d[cpu_thread_id], matrix_size);
-        // cudaMemcpy(dist_d, Dist, matrix_size, cudaMemcpyHostToDevice);
 
         int round_per_GPU = round / 2;
         if(cpu_thread_id == 1){
@@ -113,7 +93,7 @@ int main(int argc, char* argv[]) {
         cudaMemcpy(dist_d[cpu_thread_id], Dist, matrix_size, cudaMemcpyHostToDevice);
 
         for(int r = 0; r < round; r++){
-            // copy the row of pivot is enough
+            // copy the row pivot belongs to is enough
             if(r >= start_idx_y && r < start_idx_y + round_per_GPU){
                 cudaMemcpy(Dist + r * B * n, dist_d[cpu_thread_id] + r * B * n, B * n * sizeof(int), cudaMemcpyDeviceToHost);
             }
