@@ -74,7 +74,7 @@ int cal_time(struct timespec start_time, struct timespec end_time)
         temp.tv_nsec = end_time.tv_nsec - start_time.tv_nsec;
     }
     double exe_time = temp.tv_sec + (double) temp.tv_nsec / 1000000000.0;
-    return (int)(ceil(exe_time));
+    return (int)(exe_time+0.5);
 }
 
 void* mapper(void* t){
@@ -345,6 +345,7 @@ int main(int argc, char **argv)
 
         clock_gettime(CLOCK_MONOTONIC, &end_time_shuffle);
         int shuffle_time = cal_time(start_time_shuffle, end_time_shuffle);
+        cout << "start: " << start_time.tv_sec << ", end: " << end_time.tv_sec << endl;
         log_out << time(nullptr) << ",Finish_Shuffle," << to_string(shuffle_time) << endl;
 
         // dispatch reduce task
